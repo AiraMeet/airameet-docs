@@ -77,7 +77,7 @@ AiraMeet is developed iteratively. The initial scope focuses on building a rock-
 
 ## 6. Document References & Cross-Links
 
-- Technical Stack Overview: [technology-stack.md](file:///home/abdelrahmanelhelbawy/Projects/AiraMeet/docs/01-project-overview/technology-stack.md)
-- System Architecture Deep Dive: [system-architecture.md](file:///home/abdelrahmanelhelbawy/Projects/AiraMeet/docs/01-project-overview/system-architecture.md)
-- Master Roadmap: [master-roadmap.md](file:///home/abdelrahmanelhelbawy/Projects/AiraMeet/docs/02-planning/master-roadmap.md)
-- Feature 01 - Speech-to-Text: [01-speech-to-text/README.md](file:///home/abdelrahmanelhelbawy/Projects/AiraMeet/docs/03-features/01-speech-to-text/README.md)
+- Technical Stack Overview: [technology-stack.md](technology-stack.md)
+- System Architecture Deep Dive: [system-architecture.md](system-architecture.md)
+- Master Roadmap: [master-roadmap.md](../02-planning/master-roadmap.md)
+- Feature 01 - Speech-to-Text: [01-speech-to-text/README.md](../03-features/01-speech-to-text/README.md)
