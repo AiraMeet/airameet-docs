@@ -6,7 +6,7 @@ This documentation serves as the single source of truth for software architects,
 
 ---
 
-## 🧭 Documentation Map & Navigation Index
+## Documentation Map & Navigation Index
 
 ```
 docs/
@@ -63,7 +63,7 @@ docs/
 
 ---
 
-## 🏛️ Architecture At A Glance
+## Architecture At A Glance
 
 AiraMeet employs a modular, microservice-ready architecture that cleanly separates client interaction, business governance, real-time media forwarding, and compute-intensive AI inference:
 
@@ -105,7 +105,7 @@ flowchart TB
 
 ---
 
-## 📌 Document Status & Governance
+## Document Status & Governance
 
 | Section | Lead Owner | Current Status | Last Verified |
 | :--- | :--- | :--- | :--- |
@@ -118,7 +118,7 @@ flowchart TB
 
 ---
 
-## 🛠️ Documentation Standards
+## Documentation Standards
 
 Every feature specification and engineering plan inside `docs/` must strictly adhere to the following principles:
 1. **Explicit Traceability**: Link requirements to architectural designs, task IDs, and automated test cases.
