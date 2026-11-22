@@ -110,11 +110,11 @@ flowchart TB
 | Section | Lead Owner | Current Status | Last Verified |
 | :--- | :--- | :--- | :--- |
 | **01-Project Overview** | Software Architect | `Approved` | November 2026 |
-| **02-Planning** | Technical Project Manager | `In Review` | November 2026 |
-| **03-Features (Speech-to-Text)** | AI & Full-Stack Lead | `Active Planning` | November 2026 |
+| **02-Planning** | Technical Project Manager | `Approved` | November 2026 |
+| **03-Features (Speech-to-Text)** | AI & Full-Stack Lead | `Approved` | November 2026 |
 | **04-Architecture** | Principal Architect | `Approved` | November 2026 |
-| **05-Testing** | QA Automation Lead | `In Review` | November 2026 |
-| **06-Deployment** | DevOps Engineer | `Draft` | November 2026 |
+| **05-Testing** | QA Automation Lead | `Approved` | November 2026 |
+| **06-Deployment** | DevOps Engineer | `Approved` | November 2026 |
 
 ---
 
