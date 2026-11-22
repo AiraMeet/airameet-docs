@@ -1,27 +1,29 @@
 # AiraMeet
 
-Technical documentation for AiraMeet, an AI-powered video conferencing platform that turns live conversations into searchable transcripts, decisions, and follow-up actions.
+**Turn live conversations into searchable transcripts, decisions, and follow-up actions.**
 
-## About
+AiraMeet is an AI-powered video conferencing platform. This repository is its documentation hub, covering product scope, architecture, planning, feature specifications, testing, and deployment.
 
-AiraMeet brings real-time meetings and AI-assisted understanding together. This repository is the project’s documentation hub for product scope, architecture, planning, feature specifications, testing, and deployment.
+## Description
 
-The platform is designed around a web client, a business API, a real-time media pipeline, and AI services for transcription and other meeting intelligence capabilities.
+AiraMeet brings real-time meetings and AI-assisted understanding together. The platform is designed around a web client, a business API, a real-time media pipeline, and AI services for transcription and other meeting intelligence capabilities.
 
 ## Documentation
 
-| What you’re looking for | Documentation |
+Start with the [project overview](01-project-overview/project-overview.md) for the product vision, goals, and MVP scope.
+
+| If you want to learn about... | Read... |
 | --- | --- |
-| Product vision, goals, and MVP scope | [Project overview](01-project-overview/project-overview.md) |
 | System components and architecture | [System architecture](01-project-overview/system-architecture.md) |
 | Technologies in use and under consideration | [Technology stack](01-project-overview/technology-stack.md) |
-| Milestones and delivery plan | [Master roadmap](02-planning/master-roadmap.md) |
+| Milestones and delivery plan | [Master roadmap](02-planning/master-roadmap.md) · [Project timeline](02-planning/project-timeline.md) |
 | Team responsibilities | [Team assignments](02-planning/team-assignments.md) |
-| Speech-to-text feature | [Speech-to-text documentation](03-features/01-speech-to-text/README.md) |
+| Speech-to-text feature | [Feature guide](03-features/01-speech-to-text/README.md) |
 | API and WebSocket contracts | [API documentation](04-architecture/api-documentation.md) |
+| Audio streaming | [Audio streaming design](04-architecture/audio-streaming.md) |
 | Database design | [Database schema](04-architecture/database-schema.md) |
 | Quality strategy and test cases | [Test strategy](05-testing/test-strategy.md) · [Test cases](05-testing/test-cases.md) |
-| Deployment and operations | [Deployment guide](06-deployment/deployment-guide.md) |
+| Deployment and operations | [Deployment guide](06-deployment/deployment-guide.md) · [Release notes](06-deployment/release-notes.md) |
 
 ## Architecture
 
@@ -40,14 +42,14 @@ flowchart LR
 
 See the [system architecture](01-project-overview/system-architecture.md) and [technology stack](01-project-overview/technology-stack.md) for details and implementation decisions.
 
-## Project documentation
+## Project structure
 
-- [Project overview](01-project-overview/project-overview.md)
-- [Planning and roadmap](02-planning/master-roadmap.md)
-- [Feature specifications](03-features/)
-- [Architecture and interfaces](04-architecture/)
-- [Testing](05-testing/)
-- [Deployment](06-deployment/)
+- [Project overview](01-project-overview/project-overview.md) — product direction and system context
+- [Planning](02-planning/) — roadmap, timeline, and team assignments
+- [Features](03-features/) — feature requirements, designs, tasks, tests, and timelines
+- [Architecture](04-architecture/) — API, streaming, and data design
+- [Testing](05-testing/) — quality strategy and test cases
+- [Deployment](06-deployment/) — deployment guidance and release notes
 
 Feature folders contain the requirements, design, tasks, testing approach, and delivery timeline for each feature. Use the [feature template](03-features/feature-template/README.md) when documenting a new one.
 
