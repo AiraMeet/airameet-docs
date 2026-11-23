@@ -1,55 +1,155 @@
-# 05. Quality & Delivery — Operations and Release
+# 05. Quality & Delivery — Operations, Deployment & Runbook
 
-## Purpose
+## 1. Overview & Operational Scope
 
-Define deployability, observability and rollback requirements for the AI service and its backend integration. No deployment topology or production readiness is confirmed here.
+This document details the operational deployment architecture for the AiraMeet Speech-to-Text and Diarization services, including folder structure specifications, multi-stage GPU containerization, Prometheus/OpenTelemetry telemetry, health check probes, and disaster recovery procedures.
 
-## Scope and prerequisites
+---
 
-Build, package, configure, deploy, monitor and roll back model-serving components. Requires a selected model/runtime, artifact registry, target hardware, security review, service contract and release gates from [QA](quality-assurance.md).
+## 2. Complete AI Service Folder Structure
 
-## Technical approach
+The AI service repository is strictly organized to decouple training from inference runtime, and to isolate models and datasets from source code:
 
-- Package inference service with pinned dependencies and a model artifact identified by immutable version/checksum. Keep secrets/config outside images.
-- Separate liveness (process responsive) and readiness (model loaded and able to serve). GPU warm-up is a candidate operational step, not a performance guarantee.
-- Define resource limits, bounded queues, admission control, graceful shutdown, drain behavior and overload response.
-- Expose privacy-safe metrics: request/stream counts, queue depth/delay, inference duration, RTF, errors, active streams, resource use and model version. Avoid logging raw audio, tokens or unnecessary transcript text.
-- Deploy database migrations through the platform's reviewed migration process; coordinate schema compatibility with backend rollout.
-- Use staged rollout, smoke verification and an explicit rollback path to a known-good model/service version. Preserve audit trail for model/config changes.
-- Keep GPU scheduling, horizontal scaling, Redis/backplane, container runtime and orchestration choices open until infrastructure review.
+```text
+ai-service/
+├── configs/                                # Declarative YAML configurations
+│   ├── dataset_config.yaml                 # Paths, audio criteria, normalization rules
+│   ├── training_config.yaml                # Hyperparameters, batch sizes, optimizer, LoRA
+│   ├── diarization_config.yaml             # PyAnnote parameters, clustering thresholds
+│   └── inference_config.yaml               # Serving parameters, VAD thresholds, batch timeouts
+├── data/                                   # Local storage for datasets (gitignored)
+│   ├── raw/                                # Original audio files and CSV metadata
+│   ├── processed/                          # Resampled 16 kHz Mono WAV files
+│   └── manifests/                          # train.jsonl, val.jsonl, test.jsonl
+├── models/                                 # Model weights and artifacts (gitignored)
+│   ├── pretrained/                         # Downloaded baseline Hugging Face models
+│   ├── checkpoints/                        # Active rolling training step checkpoints
+│   ├── best_model/                         # Validated best ASR checkpoint
+│   └── exported/                           # CTranslate2 INT8 quantized production models
+├── src/                                    # Reusable application and library code
+│   ├── common/                             # Shared utilities (logging, audio_utils)
+│   ├── dataset/                            # Audio validator, text normalizer, manifest builder
+│   ├── asr/                                # Dataset loader, scoring metrics, CTranslate2 engine
+│   ├── diarization/                        # PyAnnote engine, timestamp aligner
+│   └── pipeline/                           # Silero VAD, sliding buffer, orchestrator
+├── service/                                # Serving & deployment interfaces
+│   ├── api/                                # REST API endpoints (routes_health, routes_offline)
+│   ├── grpc/                               # gRPC real-time streaming interfaces & proto stubs
+│   └── main.py                             # Service entry point (FastAPI + gRPC runners)
+├── scripts/                                # Executable CLI scripts (not imported as modules)
+│   ├── run_inspection.py                   # Run dataset inspection and quality validation
+│   ├── run_dataset_prep.py                 # Execute full dataset cleaning and splitting
+│   ├── run_baseline_eval.py                # Evaluate zero-shot baseline WER/CER
+│   ├── run_training.py                     # Launch ASR fine-tuning
+│   ├── run_evaluation.py                   # Benchmark fine-tuned model against test set
+│   ├── run_export.py                       # Export best model to CTranslate2 INT8
+│   └── run_diarization_eval.py             # Benchmark PyAnnote on RTTM validation set
+├── tests/                                  # Automated test suite (unit, integration, fixtures)
+├── Dockerfile                              # Multi-stage GPU Dockerfile
+├── requirements.txt                        # Pinned production dependencies
+├── requirements-dev.txt                    # Development, testing, and training dependencies
+└── README.md                               # Service documentation and execution instructions
+```
 
-## Implementation steps
+---
 
-1. Create reproducible build and artifact provenance (source revision, model checksum, dependency lock, license metadata).
-2. Add health/readiness endpoints and startup validation for model files/device/runtime compatibility.
-3. Add dashboards/alerts for service availability, latency, errors, saturation, queue growth and model version.
-4. Document deployment variables, secrets, storage, network access, scaling and privacy controls.
-5. Practice staging deploy, smoke, rollback and recovery, including incompatible model/schema scenarios.
+## 3. Production Containerization (Multi-Stage GPU Dockerfile)
 
-## Work breakdown and planning estimates
+```dockerfile
+# Stage 1: Build & Dependency Resolution
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS builder
 
-| ID | Work item | Prior O/M/P hours | Dependency |
-|---|---|---:|---|
-| OPS-STT-001 | Container images and GPU-enabled deployment configuration | 8/12/20 | AI service/runtime and application build artifacts |
-| OPS-STT-002 | Model warm-up, memory management and health probes | 6/8/14 | OPS-STT-001 |
-| OPS-STT-003 | Database migration delivery in CI/CD | 4/6/10 | Backend schema/migrations |
-| OPS-STT-004 | Telemetry and dashboards | 8/12/18 | Service metrics and platform observability |
-| OPS-STT-005 | Staging verification and rollback runbook | 6/10/16 | OPS-STT-001–004 and QA gates |
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-These are inherited estimates only, not commitments. The CUDA image/version, GPU, health endpoints and Compose topology named in earlier drafts were examples and require compatibility review.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    python3.11-venv \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-## Tools and technologies
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-Existing drafts mention Docker/Compose, NVIDIA GPU containers, Prometheus/Grafana and OpenTelemetry. These are candidate tools; align with the AiraMeet platform deployment standard. Kubernetes, GPU SKU and specific CUDA versions are TBD.
+COPY requirements.txt .
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.txt
 
-## Deliverables
+# Stage 2: Minimal Production Runtime
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS runner
 
-Versioned image/artifact, deployment configuration, health checks, dashboards/alerts, migration procedure, staging report, rollback runbook and on-call ownership.
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
 
-## Acceptance criteria
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-Artifact is reproducible and licensed; readiness fails when model/GPU dependencies are unavailable; resource saturation and overload are observable; rollout/rollback are rehearsed; no audio is written to persistent storage contrary to policy; production release gates in QA pass.
+COPY --from=builder /opt/venv /opt/venv
 
-## Dependencies and open questions
+WORKDIR /app
+COPY src/ /app/src/
+COPY service/ /app/service/
+COPY configs/inference_config.yaml /app/configs/inference_config.yaml
+COPY models/exported/whisper_medium_ct2/ /app/models/exported/whisper_medium_ct2/
 
-Depends on hosting/platform standards, model selection, artifact registry, security/privacy requirements and capacity testing. Decide GPU type/count, orchestration, scaling unit, model warmup, data residency, retention, availability objectives, alert thresholds and migration ownership.
+EXPOSE 8000 50051
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8000/health/liveness || exit 1
+
+ENTRYPOINT ["python3.11", "-m", "service.main"]
+```
+
+---
+
+## 4. Telemetry, Metrics & Observability
+
+The AI service exposes Prometheus metrics at `/metrics` (port 8000):
+
+| Metric Name | Type | Description | Target SLA / Alert Threshold |
+| :--- | :--- | :--- | :--- |
+| `airameet_ai_inference_duration_seconds` | Histogram | Forward pass duration of Whisper INT8. | p95 $\le 0.25\text{s}$; Alert if $> 0.50\text{s}$. |
+| `airameet_ai_real_time_factor` | Gauge | Real-Time Factor (RTF) across streams. | Target $\le 0.15$; Alert if $> 0.25$. |
+| `airameet_ai_active_streams_count` | Gauge | Number of active concurrent audio streams. | Max capacity 16 per GPU worker. |
+| `airameet_ai_vad_speech_ratio` | Histogram | Percentage of incoming audio marked as speech. | Monitored for VAD drift. |
+| `airameet_ai_gpu_memory_used_bytes` | Gauge | NVIDIA VRAM utilization. | Alert if $> 85\%$ of total VRAM. |
+
+---
+
+## 5. Health Checks & Probes
+
+1. **Liveness Probe (`GET /health/liveness`)**:
+   - Returns `200 OK` if the Python event loop is responsive.
+   - Used by Kubernetes/Docker to restart deadlocked workers.
+2. **Readiness Probe (`GET /health/readiness`)**:
+   - Returns `200 OK` only when:
+     - Whisper CTranslate2 model is loaded into GPU memory.
+     - Silero VAD TorchScript engine is initialized.
+     - PyAnnote diarization pipeline is loaded.
+     - gRPC port 50051 is accepting connections.
+
+---
+
+## 6. Disaster Recovery & Rollback Runbook
+
+### Scenario: High Inference Latency or VRAM Spike
+1. **Detection**: Prometheus alert fires: `airameet_ai_real_time_factor > 0.25` for 3 consecutive minutes.
+2. **Immediate Remediation**:
+   - Check GPU load via `nvidia-smi`.
+   - Scale horizontally by adding a second AI worker container: `docker compose up -d --scale ai-service=2`.
+   - ASP.NET Core gRPC load balancer automatically distributes incoming streams across both workers.
+3. **Rollback Strategy**:
+   - If a new model version (`v1.1`) exhibits elevated WER or memory leaks, update the environment variable `AI_MODEL_TAG=v1.0-stable` in `docker-compose.yml`.
+   - Execute rolling restart: `docker compose up -d --no-deps ai-service`.
+   - ASP.NET Core retries in-flight frames and seamlessly reconnects to the stable container.

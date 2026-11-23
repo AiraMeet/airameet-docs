@@ -1,47 +1,88 @@
-# 05. Quality & Delivery — Quality Assurance
+# 05. Quality & Delivery — Quality Assurance Strategy & Test Plans
 
-## Purpose
+## 1. Overview & Quality Mandate
 
-Define verification evidence required before integration and release of STT. Test scenarios are planned; none are reported as executed.
+Quality assurance for Feature 01 spans unit testing of mathematical and text normalization modules, integration testing of inter-service gRPC and WebSocket bridges, and end-to-end multi-user stress testing under real-world meeting network conditions.
 
-## Scope and prerequisites
+---
 
-Data/model evaluation, interfaces, security, meeting integration, client behavior and operational load. Requires approved [requirements](../01-planning-design/requirements.md), test data policy, versioned contracts and staging environment.
+## 2. Test Strategy Matrix
 
-## Test layers and work items
+```mermaid
+flowchart TD
+    subgraph TestPyramid["Quality Assurance Pyramid"]
+        E2E["End-to-End Meeting Stress Tests<br/>(10 simultaneous speakers, latency budget, reconnects)"]
+        INT["Integration & Contract Tests<br/>(WebSocket framing, gRPC packets, SignalR broadcast, EF Core persistence)"]
+        UNIT["Unit Tests<br/>(Arabic normalizer, audio validator, VAD filter, token aligner, JWT generator)"]
+    end
+    UNIT --> INT
+    INT --> E2E
+```
 
-| ID | Test area | Planned verification |
-|---|---|---|
-| QA-STT-001 | Audio frame harness | Send authorized prerecorded streams at contract cadence; validate bytes, sequencing, backpressure and cleanup. |
-| QA-STT-002 | Concurrency/load | Increase simultaneous streams and meetings; measure queue delay, CPU/GPU/memory, dropped frames and p95 visible latency. Historical 5/10/20 users and 16-stream target are workload proposals, not capacity results. |
-| QA-STT-003 | Attribution/security | Forged identity, expired token, non-member, cross-room subscription, stale membership and AI correlation mismatch must fail safely. |
-| QA-STT-004 | Boundary regression | Repeated words, pauses, code-switch boundaries and overlap; inspect omissions/insertions and timestamps, not only duplicate count. |
-| QA-STT-005 | Network resilience | Jitter, disconnect, mute, reconnect and service timeout; verify bounded resources, explicit user state and no duplicate final records. |
-| QA-STT-006 | End-to-end meeting | Multiple authorized participants speak supported language mixes; verify live updates, attribution, timestamps and final history. |
+| Test Level | Scope & Framework | Execution Cadence | Acceptance Gate |
+| :--- | :--- | :--- | :--- |
+| **Unit Tests** | Python `pytest`, .NET `xUnit`, Angular `Vitest` / `Jasmine`. | Every commit (CI). | 100% pass rate; $\ge 85\%$ code coverage on core business logic. |
+| **Integration Tests** | `TestServer` in ASP.NET Core, Python gRPC channel tests, SignalR client mocks. | Nightly / PR merge. | Zero contract drift; all Protobuf and JSON schemas valid. |
+| **Load & Stress Tests**| Automated `k6` WebSocket load generator + synthetic PCM audio feeds. | Milestone M7. | 10 concurrent active streams with p95 visible latency $\le 3.0\text{s}$. |
+| **Acoustic Regression**| Held-out bilingual audio test split. | Pre-release. | Fine-tuned model achieves relative WER reduction $\ge 15.0\%$. |
 
-Original O/M/P planning estimates in hours: QA-STT-001 8/12/18; QA-STT-002 10/16/24; QA-STT-003 6/10/16; QA-STT-004 6/8/14; QA-STT-005 8/12/18; QA-STT-006 12/18/28. These are unvalidated effort estimates. Previous proposed scenarios included 5/10/20 simulated streams, network impairment via `tc netem`, and three-browser E2E; define representative workloads with the platform team before adopting them as gates.
+---
 
-## Technical approach
+## 3. Dedicated Test Suites & Scenarios
 
-- Maintain separate unit, contract, integration, security, model quality, browser E2E, load and operational smoke suites.
-- Use consented/de-identified or synthetic audio in automated tests; gate access to real recordings and test transcripts.
-- Evaluate Egyptian Arabic, English and code-switching separately. Include accents/noise/device conditions where the test set represents them.
-- Keep deterministic assertions for transport/auth/data integrity separate from statistical ASR quality thresholds.
-- Define expected behavior for cross-talk, low volume, long speech, silence and disconnect. Any forced 15-second segment cutoff from earlier planning is a proposal, not a settled requirement.
-- Run security and regression tests after contract/schema changes. Archive test configuration and artifact versions with reports.
+### 3.1 Audio Streaming Test Harness (QA-STT-001)
+- **Objective**: Verify that the audio ingestion pipeline handles variable network chunking without dropping audio frames or causing jitter.
+- **Methodology**:
+  - Load a clean 60-second reference speech WAV file.
+  - Slice audio into 250ms chunks (4,000 samples = 8,000 bytes).
+  - Transmit chunks over WSS to `/ws/meetings/{id}/audio-stream` using a synthetic Python test client.
+  - Verify that the total number of audio samples received by the backend matches the reference audio file length exactly ($4,000 \times 240 = 960,000$ samples).
 
-## Tools and technologies
+---
 
-Drafts mention Python `asyncio`/WebSocket harnesses, Locust, Playwright/Cypress and Linux `tc netem`. Choose tools that fit existing CI and platform support; do not require production-like GPUs for every test layer.
+### 3.2 Chunk Boundary Regression & Deduplication (QA-STT-004)
+- **Objective**: Verify that overlapping sliding windows do not emit repeated words or drop words at boundary seams.
+- **Methodology**:
+  - Test phrases with repeated phonetic sequences (e.g., *"كل سنة أو كل موسم"*).
+  - Verify that longest common substring token alignment correctly identifies the overlapping prefix and deduplicates text.
+  - **Acceptance Criteria**: Concatenated finalized transcript must match the continuous ground truth verbatim with zero inserted duplicate words.
 
-## Deliverables
+---
 
-Traceability matrix; test suites and fixtures; model scorecards; security report; load/latency report; end-to-end release report with failures and approved exceptions.
+### 3.3 Multi-User Concurrency & Load Testing (QA-STT-002)
+- **Objective**: Validate system behavior and latency when multiple participants speak concurrently in different meeting rooms.
+- **Methodology**:
+  - Launch 10 simultaneous virtual meeting participants across 3 distinct meeting rooms.
+  - Stream continuous 16 kHz PCM speech into each stream simultaneously.
+  - Monitor GPU VRAM, CPU utilization, and visible subtitle delivery latency.
+  - **Acceptance Criteria**:
+    - Average Real-Time Factor (RTF) $\le 0.15$.
+    - p95 end-to-end visible latency $\le 3.0$ seconds.
+    - Zero server 500 errors or unhandled task cancellations.
 
-## Acceptance criteria
+---
 
-Every Must requirement has mapped, passing evidence or a formally approved exception; no unauthorized access or attribution spoofing; no unexplained data leakage; model and latency gates meet approved thresholds; load behavior and failure recovery remain within agreed limits; all reports identify tested versions and environment.
+### 3.4 Network Resilience & Disconnection Recovery (QA-STT-005)
+- **Objective**: Verify client and server stability during transient network dropouts.
+- **Methodology**:
+  - Stream audio from client for 15 seconds.
+  - Simulate network drop by killing the client TCP socket for 5 seconds.
+  - Restore network connection, re-authenticate, and resume streaming.
+  - **Acceptance Criteria**:
+    - Backend cleans up the terminated stream without memory leaks or ghost threads.
+    - Reconnected stream creates a new valid session.
+    - Historical transcript retains all speech emitted prior to the drop; zero duplicated sentences in database.
 
-## Dependencies and open questions
+---
 
-Depends on data release, test environment, CI access and agreed gates. Define synthetic/consented corpus, supported client matrix, target concurrency profile, acceptable accuracy per language, SNR test conditions and release exception authority.
+## 4. Acceptance Sign-Off Checklist (Milestone M7)
+
+Before the feature is certified for production deployment, the QA Lead and Architecture Leads must sign off on the following:
+
+- [ ] 100% of unit tests pass across AI, Backend, and Frontend repositories.
+- [ ] Overall Word Error Rate (WER) on the held-out test split is $\le 18.0\%$.
+- [ ] Code-Switching WER on mixed Arabic-English speech is $\le 22.0\%$.
+- [ ] Diarization Error Rate (DER) on Egyptian Arabic RTTM validation audio is $\le 18.0\%$.
+- [ ] End-to-end latency p95 is $\le 3.0$ seconds under 10 concurrent streams.
+- [ ] Security test proves that client-supplied identity claims in audio frames are completely ignored and cannot cause attribution spoofing.
+- [ ] Disconnect and reconnect flow recovers cleanly without duplicating transcript records.

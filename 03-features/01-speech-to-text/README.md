@@ -1,46 +1,72 @@
-# Speech-to-Text (STT)
+# Feature 01: Speech-to-Text, Speaker Diarization & Live Captions
 
-This directory is the engineering source of truth for AiraMeet meeting transcription: Egyptian Arabic, English, Arabic-English code-switching, word/segment timestamps, authenticated participant attribution, and real-time meeting delivery. It records implementation intent and decisions; it does not claim that planned work has shipped or that unmeasured targets have been met.
+**Turn live meeting conversations into speaker-attributed, synchronized, and searchable text.**
 
-## Reading order and phase dependencies
+This directory contains the complete, implementation-ready engineering documentation and roadmap for **Feature 01: Speech-to-Text (ASR), Speaker Diarization, and Meeting Live Captions** for the AiraMeet platform.
 
-| Phase | Read | Outcome / dependency |
-|---|---|---|
-| 01. Planning & Design | [Overview](01-planning-design/overview.md), [Requirements](01-planning-design/requirements.md), [System architecture](01-planning-design/system-architecture.md) | Scope, traceable requirements, boundaries and proposed end-to-end design. Start here. |
-| 02. Data Engineering | [Dataset pipeline](02-data-engineering/dataset-pipeline.md) | Reproducible, reviewed corpus and speaker-disjoint data splits; depends on approved data access and labeling policy. |
-| 03. Model Development | [Model selection](03-model-development/model-selection.md), [Training and export](03-model-development/training-and-export.md), [Evaluation](03-model-development/evaluation.md) | Evidence-based model choice, reproducible training, and measured quality/runtime; depends on phase 02. |
-| 04. System Integration | [Streaming contract](04-system-integration/streaming-contract.md), [Speaker attribution](04-system-integration/speaker-attribution.md), [Backend ownership](04-system-integration/backend-ownership.md), [Frontend ownership](04-system-integration/frontend-ownership.md) | Contracts between client, backend and AI; depends on phase 01 and iterates with phase 03. |
-| 05. Quality & Delivery | [Quality assurance](05-quality-delivery/quality-assurance.md), [Operations](05-quality-delivery/operations.md) | Verification gates and deployment/operational readiness; depends on phases 03–04. |
-| 06. Project Management | [Delivery plan](06-project-management/plan.md) | Workstream ownership, dependencies, risks, estimates and milestone planning across all phases. |
+---
 
-## Decision status
+## 1. Executive Summary
 
-- **Confirmed project context:** AiraMeet needs Egyptian Arabic, English and Arabic-English code-switching transcription; speaker attribution, timestamps and real-time meeting integration are in scope.
-- **Established design direction in source material:** attribute an isolated participant audio stream to the authenticated meeting identity; client-provided speaker IDs are untrusted. Treat this as an architectural constraint for the design, subject to the product's authentication and privacy policies.
-- **Proposals / targets:** model family, audio format and chunking values, transport details, database schema, latency/accuracy goals, and deployment topology remain proposals or targets until measured, reviewed and approved. Numeric values in this documentation are not reported results.
-- **TBD:** dataset inventory and consent/retention policy, model and license selection, evaluation thresholds, wire-level schemas, infrastructure sizing, and final milestone dates. Track decisions in the owning document and record approval/evidence before changing status.
+Feature 01 provides the core speech intelligence foundation for AiraMeet, enabling three complementary capabilities:
+1. **Automatic Speech Recognition (ASR)**: Fine-tuned deep learning transcription supporting Egyptian Arabic (colloquial), English, and Arabic-English code-switching (including technical terms).
+2. **Speaker Diarization**: Multi-speaker segmentation, turn detection, and timestamp synchronization to identify who spoke when.
+3. **Meeting Live Captions (Optional)**: Real-time, progressive subtitle streaming rendering partial hypotheses and committed transcript segments directly in the meeting interface.
 
-## Document map
+### Architectural Alignment
+- **Frontend**: Angular 17+ (Standalone Components, Reactive Signals, Tailwind CSS, Web Audio API `AudioWorklet`).
+- **Backend Core**: ASP.NET Core 8.0/9.0 Web API (Clean Architecture, EF Core 8, SQL Server, Redis, SignalR).
+- **AI Intelligence**: Python 3.11+, PyTorch 2.2+, FastAPI, Whisper-Medium, CTranslate2 INT8, PyAnnote.audio 3.1, Silero VAD v5.
+- **Inter-Service Transport**: gRPC over HTTP/2 (Backend $\leftrightarrow$ AI), WebSockets (Client $\rightarrow$ Backend audio capture), SignalR (Backend $\rightarrow$ Client live caption multicast).
 
-Existing files were reorganized as follows:
+---
 
-| Previous document | Current location |
-|---|---|
-| `feature-overview.md` | [01-planning-design/overview.md](01-planning-design/overview.md) |
-| `requirements.md` | [01-planning-design/requirements.md](01-planning-design/requirements.md) |
-| New synthesis of architecture content from overview, streaming and attribution docs | [01-planning-design/system-architecture.md](01-planning-design/system-architecture.md) |
-| `dataset-preparation.md` | [02-data-engineering/dataset-pipeline.md](02-data-engineering/dataset-pipeline.md) |
-| `model-selection.md` | [03-model-development/model-selection.md](03-model-development/model-selection.md) |
-| `model-training.md` | [03-model-development/training-and-export.md](03-model-development/training-and-export.md) |
-| `model-evaluation.md` | [03-model-development/evaluation.md](03-model-development/evaluation.md) |
-| `real-time-transcription.md` | [04-system-integration/streaming-contract.md](04-system-integration/streaming-contract.md) |
-| `speaker-identification.md` | [04-system-integration/speaker-attribution.md](04-system-integration/speaker-attribution.md) |
-| `backend-tasks.md` | [04-system-integration/backend-ownership.md](04-system-integration/backend-ownership.md) |
-| `frontend-tasks.md` | [04-system-integration/frontend-ownership.md](04-system-integration/frontend-ownership.md) |
-| `testing.md` | [05-quality-delivery/quality-assurance.md](05-quality-delivery/quality-assurance.md) |
-| `deployment.md` | [05-quality-delivery/operations.md](05-quality-delivery/operations.md) |
-| `timeline.md` | [06-project-management/plan.md](06-project-management/plan.md) |
+## 2. Documentation Directory Map
 
-## Change control
+Every document in this directory provides self-contained, actionable guidance for engineering execution without duplicated narratives.
 
-Keep each requirement uniquely identified (`FR-STT-*`, `NFR-STT-*`) and reference those IDs from design, implementation and verification records. Mark statements **Confirmed**, **Proposed**, **Target**, or **TBD**. A proposal becomes confirmed only after the owning technical lead records the decision and its rationale; a target becomes achieved only when a reproducible measurement is attached. Update links here whenever documents move.
+| Subdirectory / Document | Purpose & Primary Contents | Owning Department |
+| :--- | :--- | :--- |
+| [**`01-planning-design/overview.md`**](01-planning-design/overview.md) | Feature vision, user outcomes, functional scope, boundaries, and governance. | Product & Architecture |
+| [**`01-planning-design/requirements.md`**](01-planning-design/requirements.md) | Traceable Functional (FR-01–FR-12), Non-Functional (NFR-01–NFR-08) requirements, and edge cases. | Architecture & QA |
+| [**`01-planning-design/system-architecture.md`**](01-planning-design/system-architecture.md) | End-to-end architecture diagrams, tier breakdowns, latency budget, and data flows. | System Architecture |
+| [**`02-data-engineering/dataset-pipeline.md`**](02-data-engineering/dataset-pipeline.md) | Audio audit, Arabic/English normalization, code-switching protection, leak-free 80/10/10 split. | AI Engineering |
+| [**`03-model-development/01-model-selection.md`**](03-model-development/01-model-selection.md) | ASR & Diarization benchmark evaluation matrix, trade-offs, and final selection ADR. | AI Engineering |
+| [**`03-model-development/02-training-and-export.md`**](03-model-development/02-training-and-export.md) | Whisper fine-tuning lifecycle, hyperparameters, rolling checkpoints, CTranslate2 INT8 export. | AI Engineering |
+| [**`03-model-development/03-speaker-diarization.md`**](03-model-development/03-speaker-diarization.md) | PyAnnote 3.1 setup, RTTM validation data, multi-speaker clustering, ASR timestamp alignment. | AI Engineering |
+| [**`03-model-development/04-evaluation.md`**](03-model-development/04-evaluation.md) | WER/CER language benchmarks, RTF latency profiles, acceptance gates, and error taxonomy. | AI Engineering & QA |
+| [**`04-system-integration/backend-ownership.md`**](04-system-integration/backend-ownership.md) | ASP.NET Core Clean Architecture, enterprise auth (Register, Login, 2FA, Password lifecycle, Email service, Room authorization), meeting management, audio gateway, persistence worker. | Backend Engineering |
+| [**`04-system-integration/frontend-ownership.md`**](04-system-integration/frontend-ownership.md) | Angular 17+ components, AudioWorklet 16 kHz capture, SignalR caption component, RTL/LTR layout. | Frontend Engineering |
+| [**`04-system-integration/speaker-attribution.md`**](04-system-integration/speaker-attribution.md) | Session-bound JWT identity binding vs acoustic diarization, anti-spoofing threat model. | Backend & Security |
+| [**`04-system-integration/streaming-contract.md`**](04-system-integration/streaming-contract.md) | Protocol contracts: WebSocket binary PCM, gRPC Protobuf schema, SignalR JSON payloads. | Cross-Functional |
+| [**`05-quality-delivery/operations.md`**](05-quality-delivery/operations.md) | AI folder structure, multi-stage GPU Dockerfile, Docker Compose, Prometheus telemetry, runbooks. | DevOps & AI |
+| [**`05-quality-delivery/quality-assurance.md`**](05-quality-delivery/quality-assurance.md) | Audio streaming harness, 10-speaker load test, boundary regression, network drop recovery. | QA Engineering |
+| [**`06-project-management/plan.md`**](06-project-management/plan.md) | Master WBS, PERT estimates, task dependencies, critical path, risk register, milestones M1–M8. | Project Management |
+
+---
+
+## 3. High-Level Delivery Milestones (M1 – M8)
+
+```mermaid
+flowchart LR
+    M1["M1: Dataset Ready<br/>(Week 1)"] --> M2["M2: Baseline Evaluated<br/>(Week 2)"]
+    M2 --> M3["M3: ASR Validated<br/>(Week 3)"]
+    
+    M4["M4: Attribution Ready<br/>(Week 3)"] --> M6["M6: Real-Time Integrated<br/>(Week 5)"]
+    M5["M5: Core Apps Ready<br/>(Week 4)"] --> M6
+    M3 --> M6
+    
+    M6 --> M7["M7: QA Passed<br/>(Week 5)"]
+    M7 --> M8["M8: Deployed<br/>(Week 6)"]
+```
+
+| Gate | Title | Target Week | Exit Criteria |
+| :--- | :--- | :---: | :--- |
+| **M1** | **Dataset Ready** | Week 1 | Audio verified 16 kHz Mono; leak-free 80/10/10 split generated; code-switching preserved. |
+| **M2** | **Baseline Evaluated** | Week 2 | Zero-shot Whisper-Medium benchmarked on test split; baseline scorecard logged. |
+| **M3** | **Fine-Tuned ASR Validated** | Week 3 | Fine-tuned Whisper achieves $\ge 15\%$ relative WER drop over baseline; CTranslate2 export ready. |
+| **M4** | **Attribution Gateway Ready**| Week 3 | ASP.NET Core gateway binds streams to verified JWT; client identity spoofing rejected. |
+| **M5** | **Core Apps Ready** | Week 4 | Angular AudioWorklet captures 16 kHz PCM; meeting lifecycle and controls operational. |
+| **M6** | **Real-Time Pipeline Working**| Week 5 | Speech to caption visible latency $\le 3.0\text{s}$; partial/final updates correctly rendered. |
+| **M7** | **QA & Stress Testing Passed**| Week 5 | 10 concurrent streams tested; network disconnect recovery verified with zero duplicate words. |
+| **M8** | **Production Deployed** | Week 6 | Multi-container GPU stack active in staging; health probes passing; monitoring enabled. |

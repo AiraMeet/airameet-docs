@@ -1,50 +1,155 @@
-# 04. System Integration — Streaming Contract
+# 04. System Integration — Interface Contracts & Protocols
 
-## Purpose and status
+## 1. Protocol Architecture Overview
 
-Define the streaming lifecycle and the decisions required before client/backend/AI implementation. Current design is **proposed**; exact protocol and message schemas are TBD.
+AiraMeet employs distinct, purpose-built communication protocols across its integration boundaries:
+1. **Client $\rightarrow$ Backend**: Secure WebSocket (`WSS`) for raw binary audio chunk streaming.
+2. **Backend $\leftrightarrow$ AI Service**: High-throughput `gRPC` over HTTP/2 with typed Protobuf schemas.
+3. **Backend $\rightarrow$ Clients**: `SignalR` WebSocket Hub for multicasting live captions.
+4. **Client $\leftrightarrow$ Backend**: RESTful `HTTPS` (JSON) for authentication, meeting lifecycle, and historical transcript queries.
 
-## Scope and prerequisites
+---
 
-Capture-to-transcript path for a participant stream. Requires auth/meeting membership contract, selected model behavior, approved [architecture](../01-planning-design/system-architecture.md), and privacy rules.
+## 2. Contract 1: Client Audio Streaming $\rightarrow$ Backend Gateway
 
-## Proposed lifecycle
+- **Protocol**: Secure WebSocket (`WSS`)
+- **Route**: `/ws/meetings/{meetingId}/audio-stream`
+- **Handshake Header**: `Authorization: Bearer <JWT>`
+- **Payload Format**: Uncompressed 16-bit Signed Integer Linear PCM (Little-Endian)
+- **Audio Specification**:
+  - Sample Rate: 16,000 Hz (16 kHz)
+  - Channels: 1 (Single-channel Mono)
+  - Bit Depth: 16 bits per sample (2 bytes)
+  - Chunk Interval: 250 milliseconds
+  - Chunk Size: 4,000 samples = **8,000 bytes per frame**
+- **Payload Type**: Binary `ArrayBuffer` (no JSON wrapping). Identity is derived exclusively from the authenticated connection context.
 
-1. Client obtains microphone permission and opens an authenticated audio connection for an active meeting.
-2. Backend authenticates the user, validates meeting membership, creates a server-owned stream context and assigns a stream ID.
-3. Client sends bounded audio frames with sequence information. It does not include trusted user identity.
-4. Backend validates size/sequence, applies backpressure and forwards audio plus server-derived meeting/participant context to AI.
-5. AI emits partial/final transcript updates with segment identity and time offsets. Backend validates stream association and broadcasts only to authorized meeting members.
-6. Final segments are persisted idempotently. On mute, stop, disconnect, timeout or meeting end, services flush/discard according to the agreed policy and release buffers.
+---
 
-## Interface fields to standardize
+## 3. Contract 2: Backend $\leftrightarrow$ AI Service Ingestion (gRPC Protobuf)
 
-Audio input: protocol/version, audio format, sample rate, channel count, framing duration/bytes, stream ID, monotonically increasing sequence, optional client capture time, end-of-stream signal. Identity comes from backend auth/context, never client metadata.
+- **Protocol**: gRPC over HTTP/2
+- **Service Name**: `AudioStreamingService`
+- **Definition File**: `audio_streaming.proto`
 
-Transcript update: meeting/stream/segment IDs; revision or sequence; partial/final flag; text; start/end offsets and timebase; optional confidence with defined meaning; language/script metadata only if the model can support it reliably. Backend broadcast adds display identity from trusted participant records. History API exposes finalized records only unless product requirements say otherwise.
+```protobuf
+syntax = "proto3";
 
-Specify maximum frame/message size, idle timeout, queue limit, retry/resume semantics, duplicate handling, error codes, clock source, and ordering before implementation. Do not treat illustrative examples as final schemas.
+package airameet.ai.v1;
 
-## Experimental defaults
+service AudioStreamingService {
+  // Bidirectional streaming RPC: streams audio chunks in, streams transcriptions out
+  rpc StreamAudio (stream AudioChunkPacket) returns (stream TranscriptionResultPacket);
+}
 
-Source drafts proposed raw mono 16 kHz PCM, client frames around 250 ms, recognition windows around 1.5 s with 300 ms overlap, VAD and overlapping-context deduplication. These are starting values only. PCM byte rate should inform network sizing; sample rate conversion quality and ownership must be explicit. Partial outputs need stable IDs/revisions so clients replace hypotheses rather than append duplicates. Final boundary alignment should use token/time alignment or a tested sequence-alignment strategy; naive longest-common-substring text matching can fail on repeated words and code-switching.
+message AudioChunkPacket {
+  string session_id = 1;          // Unique audio stream identifier
+  string meeting_id = 2;          // Target meeting room GUID
+  string user_id = 3;             // Authenticated speaker GUID (verified by backend)
+  int64 sequence_number = 4;      // Monotonically increasing chunk index
+  int64 timestamp_offset_ms = 5;  // Audio offset in milliseconds from stream start
+  bytes pcm_audio = 6;            // Raw 16 kHz Mono 16-bit linear PCM bytes
+  bool is_stream_end = 7;         // True when participant mutes or leaves
+}
 
-## Implementation steps
+message WordToken {
+  string word = 1;                // Recognized word token
+  int64 start_offset_ms = 2;      // Word start offset in milliseconds
+  int64 end_offset_ms = 3;        // Word end offset in milliseconds
+  float confidence = 4;           // Token acoustic/language model confidence [0.0, 1.0]
+}
 
-1. Publish versioned protocol schemas and compatibility policy.
-2. Implement auth, admission limits, stream context and cancellation in backend.
-3. Implement bounded AI queues, VAD/window policy and model adapter.
-4. Implement event ordering, partial replacement/final idempotency, persistence handoff and client reconnect behavior.
-5. Add contract tests for framing, malformed messages, backpressure, reconnect, final flush, ordering and authorization.
+message TranscriptionResultPacket {
+  string session_id = 1;          // Correlated stream identifier
+  string meeting_id = 2;          // Meeting room GUID
+  string speaker_id = 3;          // Attributed speaker identifier (user_id or diarization id)
+  int64 sequence_number = 4;      // Monotonically increasing segment index
+  int64 start_offset_ms = 5;      // Utterance start timestamp in milliseconds
+  int64 end_offset_ms = 6;        // Utterance completion timestamp in milliseconds
+  string recognized_text = 7;     // Recognized verbatim text
+  bool is_final = 8;              // False for interim hypothesis; true for committed segment
+  float confidence = 9;           // Segment aggregate confidence score [0.0, 1.0]
+  string language = 10;           // Detected language tag: "ar", "en", or "mixed"
+  repeated WordToken words = 11;  // Detailed word-level timestamp breakdown
+}
+```
 
-## Tools and technologies
+---
 
-WebSocket/WSS, SignalR for transcript delivery, and gRPC or internal WebSocket for AI forwarding were mentioned in source planning. Choose based on existing platform patterns and measured needs. WebRTC conferencing audio and the STT capture path are separate concerns unless a validated media integration supersedes the proposed parallel path.
+## 4. Contract 3: Backend $\rightarrow$ Client Live Captions (SignalR)
 
-## Deliverables and acceptance criteria
+- **Protocol**: SignalR WebSocket Hub
+- **Hub Route**: `/hubs/meeting-transcripts?meetingId={meetingId}`
+- **Authentication**: Bearer JWT validated during connection handshake.
 
-Deliver: versioned audio/event schemas, sequence diagrams, error/recovery table and contract tests. Accept when supported clients and services interoperate against the same schema; identity is server-bound; partial revisions and final records are ordered/idempotent; queue limits and disconnect behavior are tested.
+### Event: `ReceiveTranscriptSegment`
+Broadcast to all room members whenever an interim hypothesis or final segment is generated:
 
-## Dependencies and open questions
+```json
+{
+  "segmentId": "d34e5f67-890a-bcde-f123-4567890abcde",
+  "meetingId": "8b512c98-e734-4bc3-9562-e6e2213e2f10",
+  "speaker": {
+    "userId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "displayName": "Ahmed Mansour",
+    "avatarUrl": "https://assets.airameet.com/avatars/ahmed.png"
+  },
+  "sequenceNumber": 42,
+  "startOffsetMs": 14200,
+  "endOffsetMs": 17850,
+  "text": "المشروع محتاج نركز على الـ Code-switching أكتر.",
+  "isFinal": true,
+  "confidence": 0.954,
+  "language": "mixed"
+}
+```
 
-See [requirements](../01-planning-design/requirements.md) and [attribution](speaker-attribution.md). Decide transport, authentication header/token handling for browser WebSockets, format, sample rate, timestamps/timebase, chunking, VAD ownership, partial semantics, reconnect/resume, flush rules and delivery guarantees.
+### Event: `ReceiveParticipantVoiceState`
+Broadcast when participant voice activity transitions between active and silent:
+
+```json
+{
+  "userId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "isSpeaking": true,
+  "isMuted": false
+}
+```
+
+---
+
+## 5. Contract 4: RESTful API Endpoints
+
+### 5.1 Meeting Management
+- **`POST /api/meetings`**:
+  - Request: `{"title": "Sprint Planning", "description": "Weekly alignment"}`
+  - Response (`201 Created`): `{"id": "...", "meetingCode": "air-482-kmv", "status": "Scheduled"}`
+- **`GET /api/meetings/{idOrCode}`**:
+  - Response (`200 OK`): `{"id": "...", "meetingCode": "air-482-kmv", "title": "...", "status": "Active"}`
+- **`POST /api/meetings/{idOrCode}/join`**:
+  - Response (`200 OK`): `{"participantId": "...", "role": "Participant", "joinedAt": "..."}`
+
+### 5.2 Historical Transcripts
+- **`GET /api/meetings/{id}/transcripts?page=1&pageSize=50`**:
+  - Response (`200 OK`):
+    ```json
+    {
+      "meetingId": "8b512c98-e734-4bc3-9562-e6e2213e2f10",
+      "totalSegments": 128,
+      "page": 1,
+      "pageSize": 50,
+      "segments": [
+        {
+          "id": "11ab34cd-56ef-7890-abcd-ef1234567890",
+          "userId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          "speakerName": "Ahmed Mansour",
+          "sequenceNumber": 1,
+          "startOffsetMs": 1420,
+          "endOffsetMs": 4850,
+          "text": "صباح الخير جميعاً، جاهزين نبدأ مراجعة الـ ASR Pipeline؟",
+          "confidence": 0.962,
+          "isFinal": true,
+          "timestamp": "2026-11-23T10:00:15Z"
+        }
+      ]
+    }
+    ```
